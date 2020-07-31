@@ -1,17 +1,20 @@
 <?php
 /**
- * PHPCS cross-version compatibility helper class.
+ * PHPCompatibility, an external standard for PHP_CodeSniffer.
  *
- * @category PHP
- * @package  PHPCompatibility
- * @author   Juliette Reinders Folmer <phpcompatibility_nospam@adviesenzo.nl>
+ * @package   PHPCompatibility
+ * @copyright 2012-2019 PHPCompatibility Contributors
+ * @license   https://opensource.org/licenses/LGPL-3.0 LGPL3
+ * @link      https://github.com/PHPCompatibility/PHPCompatibility
  */
 
 namespace PHPCompatibility;
 
+use PHP_CodeSniffer_Exception as PHPCS_Exception;
+use PHP_CodeSniffer_File as File;
+use PHP_CodeSniffer_Tokens as Tokens;
+
 /**
- * \PHPCompatibility\PHPCSHelper
- *
  * PHPCS cross-version compatibility helper class.
  *
  * A number of PHPCS classes were split up into several classes in PHPCS 3.x
@@ -19,9 +22,15 @@ namespace PHPCompatibility;
  * This class provides helper methods for functions which were contained in
  * one of these classes and which are used within the PHPCompatibility library.
  *
- * @category PHP
- * @package  PHPCompatibility
- * @author   Juliette Reinders Folmer <phpcompatibility_nospam@adviesenzo.nl>
+ * Additionally, this class contains some duplicates of PHPCS native methods.
+ * These methods have received bug fixes or improved functionality between the
+ * lowest supported PHPCS version and the latest PHPCS stable version and
+ * to provide the same results cross-version, PHPCompatibility needs to use
+ * the up-to-date versions of these methods.
+ *
+ * @since 8.0.0
+ * @since 8.2.0 The duplicate PHPCS methods have been moved from the `Sniff`
+ *              base class to this class.
  */
 class PHPCSHelper
 {
@@ -29,15 +38,17 @@ class PHPCSHelper
     /**
      * Get the PHPCS version number.
      *
+     * @since 8.0.0
+     *
      * @return string
      */
     public static function getVersion()
     {
-        if (defined('\PHP_CodeSniffer\Config::VERSION')) {
+        if (\defined('\PHP_CodeSniffer\Config::VERSION')) {
             // PHPCS 3.x.
             return \PHP_CodeSniffer\Config::VERSION;
         } else {
-            // PHPCS 1.x & 2.x.
+            // PHPCS 2.x.
             return \PHP_CodeSniffer::VERSION;
         }
     }
@@ -47,6 +58,8 @@ class PHPCSHelper
      * Pass config data to PHPCS.
      *
      * PHPCS cross-version compatibility helper.
+     *
+     * @since 8.0.0
      *
      * @param string      $key   The name of the config value.
      * @param string|null $value The value to set. If null, the config entry
@@ -62,7 +75,7 @@ class PHPCSHelper
             // PHPCS 3.x.
             \PHP_CodeSniffer\Config::setConfigData($key, $value, $temp);
         } else {
-            // PHPCS 1.x & 2.x.
+            // PHPCS 2.x.
             \PHP_CodeSniffer::setConfigData($key, $value, $temp);
         }
     }
@@ -70,6 +83,8 @@ class PHPCSHelper
 
     /**
      * Get the value of a single PHPCS config key.
+     *
+     * @since 8.0.0
      *
      * @param string $key The name of the config value.
      *
@@ -81,23 +96,58 @@ class PHPCSHelper
             // PHPCS 3.x.
             return \PHP_CodeSniffer\Config::getConfigData($key);
         } else {
-            // PHPCS 1.x & 2.x.
+            // PHPCS 2.x.
             return \PHP_CodeSniffer::getConfigData($key);
         }
     }
 
 
     /**
-     * Returns the position of the last non-whitespace token in a statement.
+     * Get the value of a single PHPCS config key.
+     *
+     * This config key can be set in the `CodeSniffer.conf` file, on the
+     * command-line or in a ruleset.
+     *
+     * @since 8.2.0
+     *
+     * @param \PHP_CodeSniffer_File $phpcsFile The file being scanned.
+     * @param string                $key       The name of the config value.
+     *
+     * @return string|null
+     */
+    public static function getCommandLineData(File $phpcsFile, $key)
+    {
+        if (class_exists('\PHP_CodeSniffer\Config')) {
+            // PHPCS 3.x.
+            $config = $phpcsFile->config;
+            if (isset($config->{$key})) {
+                return $config->{$key};
+            }
+        } else {
+            // PHPCS 2.x.
+            $config = $phpcsFile->phpcs->cli->getCommandLineValues();
+            if (isset($config[$key])) {
+                return $config[$key];
+            }
+        }
+
+        return null;
+    }
+
+
+    /**
+     * Returns the position of the first non-whitespace token in a statement.
      *
      * {@internal Duplicate of same method as contained in the `\PHP_CodeSniffer_File`
-     * class and introduced in PHPCS 2.1.0.
+     * class and introduced in PHPCS 2.1.0 and improved in PHPCS 2.7.1.
      *
      * Once the minimum supported PHPCS version for this standard goes beyond
      * that, this method can be removed and calls to it replaced with
-     * `$phpcsFile->findEndOfStatement($start, $ignore)` calls.
+     * `$phpcsFile->findStartOfStatement($start, $ignore)` calls.
      *
-     * Last synced with PHPCS version: PHPCS 3.3.0-alpha at commit f5d899dcb5c534a1c3cca34668624517856ba823}}
+     * Last synced with PHPCS version: PHPCS 3.3.2 at commit 6ad28354c04b364c3c71a34e4a18b629cc3b231e}
+     *
+     * @since 9.1.0
      *
      * @param \PHP_CodeSniffer_File $phpcsFile Instance of phpcsFile.
      * @param int                   $start     The position to start searching from in the token stack.
@@ -105,7 +155,88 @@ class PHPCSHelper
      *
      * @return int
      */
-    public static function findEndOfStatement(\PHP_CodeSniffer_File $phpcsFile, $start, $ignore = null)
+    public static function findStartOfStatement(File $phpcsFile, $start, $ignore = null)
+    {
+        if (version_compare(self::getVersion(), '2.7.1', '>=') === true) {
+            return $phpcsFile->findStartOfStatement($start, $ignore);
+        }
+
+        $tokens    = $phpcsFile->getTokens();
+        $endTokens = Tokens::$blockOpeners;
+
+        $endTokens[\T_COLON]            = true;
+        $endTokens[\T_COMMA]            = true;
+        $endTokens[\T_DOUBLE_ARROW]     = true;
+        $endTokens[\T_SEMICOLON]        = true;
+        $endTokens[\T_OPEN_TAG]         = true;
+        $endTokens[\T_CLOSE_TAG]        = true;
+        $endTokens[\T_OPEN_SHORT_ARRAY] = true;
+
+        if ($ignore !== null) {
+            $ignore = (array) $ignore;
+            foreach ($ignore as $code) {
+                if (isset($endTokens[$code]) === true) {
+                    unset($endTokens[$code]);
+                }
+            }
+        }
+
+        $lastNotEmpty = $start;
+
+        for ($i = $start; $i >= 0; $i--) {
+            if (isset($endTokens[$tokens[$i]['code']]) === true) {
+                // Found the end of the previous statement.
+                return $lastNotEmpty;
+            }
+
+            if (isset($tokens[$i]['scope_opener']) === true
+                && $i === $tokens[$i]['scope_closer']
+            ) {
+                // Found the end of the previous scope block.
+                return $lastNotEmpty;
+            }
+
+            // Skip nested statements.
+            if (isset($tokens[$i]['bracket_opener']) === true
+                && $i === $tokens[$i]['bracket_closer']
+            ) {
+                $i = $tokens[$i]['bracket_opener'];
+            } elseif (isset($tokens[$i]['parenthesis_opener']) === true
+                && $i === $tokens[$i]['parenthesis_closer']
+            ) {
+                $i = $tokens[$i]['parenthesis_opener'];
+            }
+
+            if (isset(Tokens::$emptyTokens[$tokens[$i]['code']]) === false) {
+                $lastNotEmpty = $i;
+            }
+        }//end for
+
+        return 0;
+    }
+
+
+    /**
+     * Returns the position of the last non-whitespace token in a statement.
+     *
+     * {@internal Duplicate of same method as contained in the `\PHP_CodeSniffer_File`
+     * class and introduced in PHPCS 2.1.0 and improved in PHPCS 2.7.1 and 3.3.0.
+     *
+     * Once the minimum supported PHPCS version for this standard goes beyond
+     * that, this method can be removed and calls to it replaced with
+     * `$phpcsFile->findEndOfStatement($start, $ignore)` calls.
+     *
+     * Last synced with PHPCS version: PHPCS 3.3.0-alpha at commit f5d899dcb5c534a1c3cca34668624517856ba823}
+     *
+     * @since 8.2.0
+     *
+     * @param \PHP_CodeSniffer_File $phpcsFile Instance of phpcsFile.
+     * @param int                   $start     The position to start searching from in the token stack.
+     * @param int|array             $ignore    Token types that should not be considered stop points.
+     *
+     * @return int
+     */
+    public static function findEndOfStatement(File $phpcsFile, $start, $ignore = null)
     {
         if (version_compare(self::getVersion(), '3.3.0', '>=') === true) {
             return $phpcsFile->findEndOfStatement($start, $ignore);
@@ -113,16 +244,16 @@ class PHPCSHelper
 
         $tokens    = $phpcsFile->getTokens();
         $endTokens = array(
-            T_COLON                => true,
-            T_COMMA                => true,
-            T_DOUBLE_ARROW         => true,
-            T_SEMICOLON            => true,
-            T_CLOSE_PARENTHESIS    => true,
-            T_CLOSE_SQUARE_BRACKET => true,
-            T_CLOSE_CURLY_BRACKET  => true,
-            T_CLOSE_SHORT_ARRAY    => true,
-            T_OPEN_TAG             => true,
-            T_CLOSE_TAG            => true,
+            \T_COLON                => true,
+            \T_COMMA                => true,
+            \T_DOUBLE_ARROW         => true,
+            \T_SEMICOLON            => true,
+            \T_CLOSE_PARENTHESIS    => true,
+            \T_CLOSE_SQUARE_BRACKET => true,
+            \T_CLOSE_CURLY_BRACKET  => true,
+            \T_CLOSE_SHORT_ARRAY    => true,
+            \T_OPEN_TAG             => true,
+            \T_CLOSE_TAG            => true,
         );
 
         if ($ignore !== null) {
@@ -139,12 +270,12 @@ class PHPCSHelper
         for ($i = $start; $i < $phpcsFile->numTokens; $i++) {
             if ($i !== $start && isset($endTokens[$tokens[$i]['code']]) === true) {
                 // Found the end of the statement.
-                if ($tokens[$i]['code'] === T_CLOSE_PARENTHESIS
-                    || $tokens[$i]['code'] === T_CLOSE_SQUARE_BRACKET
-                    || $tokens[$i]['code'] === T_CLOSE_CURLY_BRACKET
-                    || $tokens[$i]['code'] === T_CLOSE_SHORT_ARRAY
-                    || $tokens[$i]['code'] === T_OPEN_TAG
-                    || $tokens[$i]['code'] === T_CLOSE_TAG
+                if ($tokens[$i]['code'] === \T_CLOSE_PARENTHESIS
+                    || $tokens[$i]['code'] === \T_CLOSE_SQUARE_BRACKET
+                    || $tokens[$i]['code'] === \T_CLOSE_CURLY_BRACKET
+                    || $tokens[$i]['code'] === \T_CLOSE_SHORT_ARRAY
+                    || $tokens[$i]['code'] === \T_OPEN_TAG
+                    || $tokens[$i]['code'] === \T_CLOSE_TAG
                 ) {
                     return $lastNotEmpty;
                 }
@@ -157,8 +288,8 @@ class PHPCSHelper
                 && ($i === $tokens[$i]['scope_opener']
                 || $i === $tokens[$i]['scope_condition'])
             ) {
-                if ($i === $start && isset(Util\Tokens::$scopeOpeners[$this->tokens[$i]['code']]) === true) {
-                    return $this->tokens[$i]['scope_closer'];
+                if ($i === $start && isset(Tokens::$scopeOpeners[$tokens[$i]['code']]) === true) {
+                    return $tokens[$i]['scope_closer'];
                 }
 
                 $i = $tokens[$i]['scope_closer'];
@@ -172,14 +303,13 @@ class PHPCSHelper
                 $i = $tokens[$i]['parenthesis_closer'];
             }
 
-            if (isset(\PHP_CodeSniffer_Tokens::$emptyTokens[$tokens[$i]['code']]) === false) {
+            if (isset(Tokens::$emptyTokens[$tokens[$i]['code']]) === false) {
                 $lastNotEmpty = $i;
             }
         }//end for
 
         return ($phpcsFile->numTokens - 1);
-
-    }//end findEndOfStatement()
+    }
 
 
     /**
@@ -197,14 +327,17 @@ class PHPCSHelper
      * that, this method can be removed and calls to it replaced with
      * `$phpcsFile->findExtendedClassName($stackPtr)` calls.
      *
-     * Last synced with PHPCS version: PHPCS 3.1.0-alpha at commit a9efcc9b0703f3f9f4a900623d4e97128a6aafc6}}
+     * Last synced with PHPCS version: PHPCS 3.1.0-alpha at commit a9efcc9b0703f3f9f4a900623d4e97128a6aafc6}
+     *
+     * @since 7.1.4
+     * @since 8.2.0 Moved from the `Sniff` class to this class.
      *
      * @param \PHP_CodeSniffer_File $phpcsFile Instance of phpcsFile.
      * @param int                   $stackPtr  The position of the class token in the stack.
      *
      * @return string|false
      */
-    public static function findExtendedClassName(\PHP_CodeSniffer_File $phpcsFile, $stackPtr)
+    public static function findExtendedClassName(File $phpcsFile, $stackPtr)
     {
         if (version_compare(self::getVersion(), '3.1.0', '>=') === true) {
             return $phpcsFile->findExtendedClassName($stackPtr);
@@ -217,7 +350,7 @@ class PHPCSHelper
             return false;
         }
 
-        if ($tokens[$stackPtr]['code'] !== T_CLASS
+        if ($tokens[$stackPtr]['code'] !== \T_CLASS
             && $tokens[$stackPtr]['type'] !== 'T_ANON_CLASS'
             && $tokens[$stackPtr]['type'] !== 'T_INTERFACE'
         ) {
@@ -229,15 +362,15 @@ class PHPCSHelper
         }
 
         $classCloserIndex = $tokens[$stackPtr]['scope_closer'];
-        $extendsIndex     = $phpcsFile->findNext(T_EXTENDS, $stackPtr, $classCloserIndex);
-        if (false === $extendsIndex) {
+        $extendsIndex     = $phpcsFile->findNext(\T_EXTENDS, $stackPtr, $classCloserIndex);
+        if ($extendsIndex === false) {
             return false;
         }
 
         $find = array(
-            T_NS_SEPARATOR,
-            T_STRING,
-            T_WHITESPACE,
+            \T_NS_SEPARATOR,
+            \T_STRING,
+            \T_WHITESPACE,
         );
 
         $end  = $phpcsFile->findNext($find, ($extendsIndex + 1), $classCloserIndex, true);
@@ -249,8 +382,7 @@ class PHPCSHelper
         }
 
         return $name;
-
-    }//end findExtendedClassName()
+    }
 
 
     /**
@@ -263,14 +395,17 @@ class PHPCSHelper
      * in PHPCS 2.8.0, so only defer to upstream for higher versions.
      * Once the minimum supported PHPCS version for this sniff library goes beyond
      * that, this method can be removed and calls to it replaced with
-     * `$phpcsFile->findImplementedInterfaceNames($stackPtr)` calls.}}
+     * `$phpcsFile->findImplementedInterfaceNames($stackPtr)` calls.}
+     *
+     * @since 7.0.3
+     * @since 8.2.0 Moved from the `Sniff` class to this class.
      *
      * @param \PHP_CodeSniffer_File $phpcsFile The file being scanned.
      * @param int                   $stackPtr  The position of the class token.
      *
      * @return array|false
      */
-    public static function findImplementedInterfaceNames(\PHP_CodeSniffer_File $phpcsFile, $stackPtr)
+    public static function findImplementedInterfaceNames(File $phpcsFile, $stackPtr)
     {
         if (version_compare(self::getVersion(), '2.7.1', '>') === true) {
             return $phpcsFile->findImplementedInterfaceNames($stackPtr);
@@ -283,7 +418,7 @@ class PHPCSHelper
             return false;
         }
 
-        if ($tokens[$stackPtr]['code'] !== T_CLASS
+        if ($tokens[$stackPtr]['code'] !== \T_CLASS
             && $tokens[$stackPtr]['type'] !== 'T_ANON_CLASS'
         ) {
             return false;
@@ -294,16 +429,16 @@ class PHPCSHelper
         }
 
         $classOpenerIndex = $tokens[$stackPtr]['scope_opener'];
-        $implementsIndex  = $phpcsFile->findNext(T_IMPLEMENTS, $stackPtr, $classOpenerIndex);
+        $implementsIndex  = $phpcsFile->findNext(\T_IMPLEMENTS, $stackPtr, $classOpenerIndex);
         if ($implementsIndex === false) {
             return false;
         }
 
         $find = array(
-            T_NS_SEPARATOR,
-            T_STRING,
-            T_WHITESPACE,
-            T_COMMA,
+            \T_NS_SEPARATOR,
+            \T_STRING,
+            \T_WHITESPACE,
+            \T_COMMA,
         );
 
         $end  = $phpcsFile->findNext($find, ($implementsIndex + 1), ($classOpenerIndex + 1), true);
@@ -317,8 +452,7 @@ class PHPCSHelper
             $names = array_map('trim', $names);
             return $names;
         }
-
-    }//end findImplementedInterfaceNames()
+    }
 
 
     /**
@@ -328,12 +462,14 @@ class PHPCSHelper
      *
      * <code>
      *   0 => array(
-     *         'token'             => int,     // The position of the var in the token stack.
      *         'name'              => '$var',  // The variable name.
+     *         'token'             => integer, // The stack pointer to the variable name.
      *         'content'           => string,  // The full content of the variable definition.
      *         'pass_by_reference' => boolean, // Is the variable passed by reference?
      *         'variable_length'   => boolean, // Is the param of variable length through use of `...` ?
      *         'type_hint'         => string,  // The type hint for the variable.
+     *         'type_hint_token'   => integer, // The stack pointer to the type hint
+     *                                         // or false if there is no type hint.
      *         'nullable_type'     => boolean, // Is the variable using a nullable type?
      *        )
      * </code>
@@ -342,21 +478,12 @@ class PHPCSHelper
      * 'default' with the value of the default as a string.
      *
      * {@internal Duplicate of same method as contained in the `\PHP_CodeSniffer_File`
-     * class, but with some improvements which have been introduced in
-     * PHPCS 2.8.0.
-     * {@link https://github.com/squizlabs/PHP_CodeSniffer/pull/1117},
-     * {@link https://github.com/squizlabs/PHP_CodeSniffer/pull/1193} and
-     * {@link https://github.com/squizlabs/PHP_CodeSniffer/pull/1293}.
+     * class.
      *
-     * Once the minimum supported PHPCS version for this standard goes beyond
-     * that, this method can be removed and calls to it replaced with
-     * `$phpcsFile->getMethodParameters($stackPtr)` calls.
+     * Last synced with PHPCS version: PHPCS 3.3.0-alpha at commit 53a28408d345044c0360c2c1b4a2aaebf4a3b8c9}
      *
-     * NOTE: This version does not deal with the new T_NULLABLE token type.
-     * This token is included upstream only in 2.8.0+ and as we defer to upstream
-     * in that case, no need to deal with it here.
-     *
-     * Last synced with PHPCS version: PHPCS 2.9.0-alpha at commit f1511adad043edfd6d2e595e77385c32577eb2bc}}
+     * @since 7.0.3
+     * @since 8.2.0 Moved from the `Sniff` class to this class.
      *
      * @param \PHP_CodeSniffer_File $phpcsFile Instance of phpcsFile.
      * @param int                   $stackPtr  The position in the stack of the
@@ -367,9 +494,9 @@ class PHPCSHelper
      * @throws \PHP_CodeSniffer_Exception If the specified $stackPtr is not of
      *                                    type T_FUNCTION or T_CLOSURE.
      */
-    public static function getMethodParameters(\PHP_CodeSniffer_File $phpcsFile, $stackPtr)
+    public static function getMethodParameters(File $phpcsFile, $stackPtr)
     {
-        if (version_compare(self::getVersion(), '2.7.1', '>') === true) {
+        if (version_compare(self::getVersion(), '3.3.0', '>=') === true) {
             return $phpcsFile->getMethodParameters($stackPtr);
         }
 
@@ -380,8 +507,10 @@ class PHPCSHelper
             return false;
         }
 
-        if ($tokens[$stackPtr]['code'] !== T_FUNCTION && $tokens[$stackPtr]['code'] !== T_CLOSURE) {
-            throw new \PHP_CodeSniffer_Exception('$stackPtr must be of type T_FUNCTION or T_CLOSURE');
+        if ($tokens[$stackPtr]['code'] !== \T_FUNCTION
+            && $tokens[$stackPtr]['code'] !== \T_CLOSURE
+        ) {
+            throw new PHPCS_Exception('$stackPtr must be of type T_FUNCTION or T_CLOSURE');
         }
 
         $opener = $tokens[$stackPtr]['parenthesis_opener'];
@@ -395,6 +524,7 @@ class PHPCSHelper
         $passByReference = false;
         $variableLength  = false;
         $typeHint        = '';
+        $typeHintToken   = false;
         $nullableType    = false;
 
         for ($i = $paramStart; $i <= $closer; $i++) {
@@ -418,7 +548,9 @@ class PHPCSHelper
 
             switch ($tokens[$i]['type']) {
                 case 'T_BITWISE_AND':
-                    $passByReference = true;
+                    if ($defaultStart === null) {
+                        $passByReference = true;
+                    }
                     break;
                 case 'T_VARIABLE':
                     $currVar = $i;
@@ -426,8 +558,12 @@ class PHPCSHelper
                 case 'T_ELLIPSIS':
                     $variableLength = true;
                     break;
-                case 'T_ARRAY_HINT':
+                case 'T_ARRAY_HINT': // Pre-PHPCS 3.3.0.
                 case 'T_CALLABLE':
+                    if ($typeHintToken === false) {
+                        $typeHintToken = $i;
+                    }
+
                     $typeHint .= $tokens[$i]['content'];
                     break;
                 case 'T_SELF':
@@ -435,6 +571,10 @@ class PHPCSHelper
                 case 'T_STATIC':
                     // Self and parent are valid, static invalid, but was probably intended as type hint.
                     if (isset($defaultStart) === false) {
+                        if ($typeHintToken === false) {
+                            $typeHintToken = $i;
+                        }
+
                         $typeHint .= $tokens[$i]['content'];
                     }
                     break;
@@ -443,7 +583,7 @@ class PHPCSHelper
                     // also be a constant used as a default value.
                     $prevComma = false;
                     for ($t = $i; $t >= $opener; $t--) {
-                        if ($tokens[$t]['code'] === T_COMMA) {
+                        if ($tokens[$t]['code'] === \T_COMMA) {
                             $prevComma = $t;
                             break;
                         }
@@ -452,7 +592,7 @@ class PHPCSHelper
                     if ($prevComma !== false) {
                         $nextEquals = false;
                         for ($t = $prevComma; $t < $i; $t++) {
-                            if ($tokens[$t]['code'] === T_EQUAL) {
+                            if ($tokens[$t]['code'] === \T_EQUAL) {
                                 $nextEquals = $t;
                                 break;
                             }
@@ -464,16 +604,25 @@ class PHPCSHelper
                     }
 
                     if ($defaultStart === null) {
+                        if ($typeHintToken === false) {
+                            $typeHintToken = $i;
+                        }
+
                         $typeHint .= $tokens[$i]['content'];
                     }
                     break;
                 case 'T_NS_SEPARATOR':
                     // Part of a type hint or default value.
                     if ($defaultStart === null) {
+                        if ($typeHintToken === false) {
+                            $typeHintToken = $i;
+                        }
+
                         $typeHint .= $tokens[$i]['content'];
                     }
                     break;
-                case 'T_INLINE_THEN':
+                case 'T_NULLABLE':
+                case 'T_INLINE_THEN': // Pre-PHPCS 2.8.0.
                     if ($defaultStart === null) {
                         $nullableType = true;
                         $typeHint    .= $tokens[$i]['content'];
@@ -484,7 +633,7 @@ class PHPCSHelper
                     // If it's null, then there must be no parameters for this
                     // method.
                     if ($currVar === null) {
-                        continue;
+                        break;
                     }
 
                     $vars[$paramCount]            = array();
@@ -504,6 +653,7 @@ class PHPCSHelper
                     $vars[$paramCount]['pass_by_reference'] = $passByReference;
                     $vars[$paramCount]['variable_length']   = $variableLength;
                     $vars[$paramCount]['type_hint']         = $typeHint;
+                    $vars[$paramCount]['type_hint_token']   = $typeHintToken;
                     $vars[$paramCount]['nullable_type']     = $nullableType;
 
                     // Reset the vars, as we are about to process the next parameter.
@@ -512,6 +662,7 @@ class PHPCSHelper
                     $passByReference = false;
                     $variableLength  = false;
                     $typeHint        = '';
+                    $typeHintToken   = false;
                     $nullableType    = false;
 
                     $paramCount++;
@@ -523,6 +674,5 @@ class PHPCSHelper
         }//end for
 
         return $vars;
-
-    }//end getMethodParameters()
+    }
 }

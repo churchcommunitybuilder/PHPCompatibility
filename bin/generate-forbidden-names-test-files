@@ -1,14 +1,19 @@
 #!/usr/bin/env php
 <?php
 /**
+ * PHPCompatibility, an external standard for PHP_CodeSniffer.
+ *
  * This script is used to generate the test case specimens for the forbidden-names Sniff.
  *
- * @category Tests
- * @package  PHPCompatibility
- * @author   Jansen Price <jansen.price@gmail.com>
+ * @package   PHPCompatibility
+ * @copyright 2012-2019 PHPCompatibility Contributors
+ * @license   https://opensource.org/licenses/LGPL-3.0 LGPL3
+ * @link      https://github.com/PHPCompatibility/PHPCompatibility
+ *
+ * @since 5.5
  */
 
-// This array is pulled from PHPCompatibility/Sniffs/PHP/ForbiddenNamesSniff.php
+// This array is pulled from PHPCompatibility/Sniffs/Keywords/ForbiddenNamesSniff.php
 $invalidNames = array(
     'abstract' => '5.0',
     'and' => 'all',
@@ -24,15 +29,20 @@ $invalidNames = array(
     'continue' => 'all',
     'declare' => 'all',
     'default' => 'all',
+    'die' => 'all',
     'do' => 'all',
+    'echo' => 'all',
     'else' => 'all',
     'elseif' => 'all',
+    'empty' => 'all',
     'enddeclare' => 'all',
     'endfor' => 'all',
     'endforeach' => 'all',
     'endif' => 'all',
     'endswitch' => 'all',
     'endwhile' => 'all',
+    'eval' => 'all',
+    'exit' => 'all',
     'extends' => 'all',
     'final' => '5.0',
     'finally' => '5.5',
@@ -43,24 +53,34 @@ $invalidNames = array(
     'goto' => '5.3',
     'if' => 'all',
     'implements' => '5.0',
-    'interface' => '5.0',
+    'include' => 'all',
+    'include_once' => 'all',
     'instanceof' => '5.0',
     'insteadof' => '5.4',
+    'interface' => '5.0',
+    'isset' => 'all',
+    'list' => 'all',
     'namespace' => '5.3',
     'new' => 'all',
     'or' => 'all',
+    'print' => 'all',
     'private' => '5.0',
     'protected' => '5.0',
     'public' => '5.0',
+    'require' => 'all',
+    'require_once' => 'all',
+    'return' => 'all',
     'static' => 'all',
     'switch' => 'all',
     'throw' => '5.0',
     'trait' => '5.4',
     'try' => '5.0',
+    'unset' => 'all',
     'use' => 'all',
     'var' => 'all',
     'while' => 'all',
     'xor' => 'all',
+    'yield' => '5.5',
     '__CLASS__' => 'all',
     '__DIR__' => '5.3',
     '__FILE__' => 'all',
@@ -157,8 +177,8 @@ $tests = array(
 $path = realpath(dirname(__DIR__))
     . DIRECTORY_SEPARATOR . 'PHPCompatibility'
     . DIRECTORY_SEPARATOR . 'Tests'
-    . DIRECTORY_SEPARATOR . 'sniff-examples'
-    . DIRECTORY_SEPARATOR . 'forbidden-names';
+    . DIRECTORY_SEPARATOR . 'Keywords'
+    . DIRECTORY_SEPARATOR . 'ForbiddenNames';
 
 foreach ($tests as $name => $callback) {
     $filename = $path . DIRECTORY_SEPARATOR . $name . '.php';
